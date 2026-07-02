@@ -549,6 +549,34 @@
         .modal-buttons button.confirm:active {
             transform: translateY(2px);
         }
+
+        /* 加载动画 */
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #e0e7f0;
+            border-top: 3px solid #4caf50;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .whitelist-loading {
+            color: #2c5a7a;
+            font-size: 0.9rem;
+        }
+        .whitelist-error {
+            color: #c0392b;
+            font-size: 0.9rem;
+        }
+        .whitelist-success {
+            color: #1e6f5c;
+            font-size: 0.9rem;
+        }
     </style>
 </head>
 <body>
@@ -593,7 +621,7 @@
     <div class="leaderboard-wrapper">
         <div class="leaderboard-section">
             <div class="leaderboard-header">
-                <h3>🏅 答题排行榜 <span style="font-size:0.7rem;">(答题模式)</span></h3>
+                <h3>🏅 今日排行榜 <span style="font-size:0.7rem;">(每人当日最佳)</span></h3>
                 <button id="refreshLeaderboardBtn" class="refresh-lb-btn">🔄 刷新排名</button>
             </div>
             <div id="leaderboardContent" class="leaderboard-horizontal">
@@ -602,9 +630,9 @@
         </div>
         <!-- 玩家实时排行卡片 -->
         <div class="personal-rank-card" id="personalRankCard">
-            <div class="personal-title">🎯 我的实时排名</div>
+            <div class="personal-title">🎯 我的今日排名</div>
             <div id="personalRankContent" style="min-height: 160px;">
-                <div class="no-data-card">暂无答题记录<br>完成答题模式后自动显示排名</div>
+                <div class="no-data-card">今日暂无答题记录<br>完成答题模式后自动显示今日排名</div>
             </div>
         </div>
     </div>
@@ -616,7 +644,7 @@
 <div id="infoModal" class="modal-overlay">
     <div class="modal-dialog">
         <h3>✏️ 答题模式</h3>
-        <p>请填写个人信息后再开始挑战</p>
+        <p id="modalSubtitle">请填写个人信息后再开始挑战</p>
         <div class="input-group">
             <label>🏫 班级</label>
             <select id="classSelect">
@@ -629,6 +657,7 @@
             <label>👧 姓名</label>
             <input type="text" id="studentNameInput" placeholder="请输入姓名" maxlength="20" autocomplete="off">
         </div>
+        <div id="whitelistStatus" style="text-align:center; margin-bottom:12px; min-height:24px;"></div>
         <div class="modal-buttons">
             <button id="modalCancelBtn">取消</button>
             <button id="modalConfirmBtn" class="confirm">开始答题</button>
@@ -652,6 +681,10 @@
     let studentName = null;
     let lastCompletedRecord = null;   // 存储最后一次完成的记录(用于个人排名)
 
+    // 白名单缓存
+    let whitelistCache = null;
+    let whitelistLoading = false;
+
     const sizeSelect = document.getElementById("sizeSelect");
     const difficultySelect = document.getElementById("difficultySelect");
     const newGameBtn = document.getElementById("newGameBtn");
@@ -669,6 +702,84 @@
     const modalCancelBtn = document.getElementById("modalCancelBtn");
     const refreshLeaderboardBtn = document.getElementById("refreshLeaderboardBtn");
     const personalRankContent = document.getElementById("personalRankContent");
+    const whitelistStatus = document.getElementById("whitelistStatus");
+    const modalSubtitle = document.getElementById("modalSubtitle");
+
+    // ========== 白名单功能 ==========
+    const WHITELIST_API = "https://wzkjgz.site/api/5tmbx2o6rg/all";
+
+    async function fetchWhitelist() {
+        if (whitelistCache) return whitelistCache;
+        if (whitelistLoading) {
+            return new Promise((resolve) => {
+                const check = () => {
+                    if (whitelistCache) resolve(whitelistCache);
+                    else if (!whitelistLoading) resolve(null);
+                    else setTimeout(check, 200);
+                };
+                check();
+            });
+        }
+        whitelistLoading = true;
+        try {
+            const res = await fetch(WHITELIST_API);
+            if (!res.ok) throw new Error("HTTP error");
+            const json = await res.json();
+            const submissions = json.submissions || [];
+            const whitelistSet = new Set();
+            for (let item of submissions) {
+                const cls = item.class || "";
+                const name = item.name || "";
+                if (cls && name) {
+                    whitelistSet.add(`${cls.trim()}|${name.trim()}`);
+                }
+            }
+            whitelistCache = whitelistSet;
+            return whitelistCache;
+        } catch (err) {
+            console.error("白名单加载失败:", err);
+            return null;
+        } finally {
+            whitelistLoading = false;
+        }
+    }
+
+    async function checkWhitelist(classNumber, studentName) {
+        const whitelist = await fetchWhitelist();
+        if (!whitelist) {
+            return { allowed: false, error: "白名单加载失败，请检查网络后重试" };
+        }
+        const classStr = `${classNumber}班`;
+        const key = `${classStr}|${studentName.trim()}`;
+        if (whitelist.has(key)) {
+            return { allowed: true };
+        } else {
+            return { allowed: false, error: `未找到 ${classStr}的 ${studentName.trim()}，请确认班级和姓名是否正确` };
+        }
+    }
+
+    async function validateInputOnChange() {
+        const classNum = classSelect.value;
+        const name = studentNameInput.value.trim();
+        if (!name) {
+            whitelistStatus.innerHTML = '';
+            modalSubtitle.textContent = '请填写个人信息后再开始挑战';
+            return;
+        }
+        whitelistStatus.innerHTML = `<span class="whitelist-loading"><span class="spinner"></span>正在验证...</span>`;
+        try {
+            const result = await checkWhitelist(parseInt(classNum), name);
+            if (result.allowed) {
+                whitelistStatus.innerHTML = `<span class="whitelist-success">✅ 已通过验证，可以开始答题</span>`;
+                modalSubtitle.textContent = '✅ 身份已验证，点击"开始答题"进入挑战';
+            } else {
+                whitelistStatus.innerHTML = `<span class="whitelist-error">❌ ${result.error}</span>`;
+                modalSubtitle.textContent = '⚠️ 请检查班级和姓名是否在白名单中';
+            }
+        } catch (e) {
+            whitelistStatus.innerHTML = `<span class="whitelist-error">❌ 验证失败，请重试</span>`;
+        }
+    }
 
     function formatTime(sec) {
         let mins = Math.floor(sec / 60);
@@ -702,30 +813,58 @@
             modeBadgeSpan.textContent = "📖 练习模式"; modeTipSpan.innerHTML = "✨ 练习模式：随意填写，不计时 ✨";
         }
         if (!keepInfo) { studentClass = null; studentName = null; }
+        whitelistStatus.innerHTML = '';
+        modalSubtitle.textContent = '请填写个人信息后再开始挑战';
     }
 
     function showInfoModal() {
-        if (isGameFinished) { modeTipSpan.innerHTML = "🏁 游戏已完成，请开始新游戏再开启答题模式"; modeTipSpan.style.color = "#c0392b"; return false; }
+        if (isGameFinished) { modeTipSpan.innerHTML = "🏁 游戏已完成，请点击「新游戏」重新挑战"; modeTipSpan.style.color = "#c0392b"; return false; }
         if (isAnswerModeActive) return false;
         classSelect.value = "1"; studentNameInput.value = "";
+        whitelistStatus.innerHTML = '';
+        modalSubtitle.textContent = '请填写个人信息后再开始挑战';
         modalOverlay.classList.add("active");
         setTimeout(() => studentNameInput.focus(), 100);
         return true;
     }
     function hideModal() { modalOverlay.classList.remove("active"); }
-    function confirmAnswerMode() {
+
+    async function confirmAnswerMode() {
         const selectedClass = classSelect.value;
         const name = studentNameInput.value.trim();
-        if (name === "") { alert("请填写姓名！"); studentNameInput.focus(); return; }
-        studentClass = parseInt(selectedClass); studentName = name;
-        hideModal();
-        isAnswerModeActive = true;
-        stopTimer(); resetTimerDisplay(); startTimerIfNeeded();
-        answerModeBtn.disabled = true; answerModeBtn.textContent = "⏵ 答题中...";
-        modeBadgeSpan.textContent = `⏱️ 答题模式 (${studentName} 同学)`; modeBadgeSpan.style.background = "#b45f1b";
-        modeTipSpan.innerHTML = `⚡ 答题模式已开启，计时开始！完成时自动上报成绩 (班级:${studentClass}班 姓名:${studentName}) ⚡`;
-        modeTipSpan.style.color = "#2c6e2c";
-        renderSudokuGrid();
+        if (name === "") {
+            whitelistStatus.innerHTML = `<span class="whitelist-error">❌ 请填写姓名！</span>`;
+            studentNameInput.focus();
+            return;
+        }
+
+        whitelistStatus.innerHTML = `<span class="whitelist-loading"><span class="spinner"></span>正在验证身份...</span>`;
+        modalConfirmBtn.disabled = true;
+
+        try {
+            const result = await checkWhitelist(parseInt(selectedClass), name);
+            if (!result.allowed) {
+                whitelistStatus.innerHTML = `<span class="whitelist-error">❌ ${result.error}</span>`;
+                modalSubtitle.textContent = '⚠️ 请检查班级和姓名是否在白名单中';
+                modalConfirmBtn.disabled = false;
+                return;
+            }
+            whitelistStatus.innerHTML = `<span class="whitelist-success">✅ 验证通过！</span>`;
+            studentClass = parseInt(selectedClass);
+            studentName = name;
+            hideModal();
+            isAnswerModeActive = true;
+            stopTimer(); resetTimerDisplay(); startTimerIfNeeded();
+            answerModeBtn.disabled = true; answerModeBtn.textContent = "⏵ 答题中...";
+            modeBadgeSpan.textContent = `⏱️ 答题模式 (${studentName} 同学)`; modeBadgeSpan.style.background = "#b45f1b";
+            modeTipSpan.innerHTML = `⚡ 答题模式已开启，计时开始！完成时自动上报成绩 (班级:${studentClass}班 姓名:${studentName}) ⚡`;
+            modeTipSpan.style.color = "#2c6e2c";
+            renderSudokuGrid();
+            modalConfirmBtn.disabled = false;
+        } catch (err) {
+            whitelistStatus.innerHTML = `<span class="whitelist-error">❌ 验证失败，请重试</span>`;
+            modalConfirmBtn.disabled = false;
+        }
     }
 
     function reportGameResult(modeType, elapsedSeconds, className, studentNameValue, size, difficulty) {
@@ -734,7 +873,7 @@
             classNumber: className, studentName: studentNameValue, timeSeconds: elapsedSeconds,
             formattedTime: formatTime(elapsedSeconds), completedAt: new Date().toISOString(), source: "math_sudoku_game"
         };
-        return fetch("https://quickform.cn/api/1xtadf78hw", { 
+        return fetch("https://wzkjgz.site/api/vhcjkp3lmk", { 
             method: "POST", 
             headers: { "Content-Type": "application/json" }, 
             body: JSON.stringify(gameData), 
@@ -812,7 +951,6 @@
         
         if(completedMode === "answer" && completedClass && completedName) {
             await reportGameResult(completedMode, completedTime, completedClass, completedName, completedSize, completedDifficulty);
-            // 记录本次完成记录用于个人排名
             lastCompletedRecord = {
                 studentName: completedName,
                 classNumber: completedClass,
@@ -822,7 +960,7 @@
                 difficulty: completedDifficulty,
                 mode: "answer"
             };
-            await fetchLeaderboardAndRender();  // 刷新排行榜和个人排名
+            await fetchLeaderboardAndRender();
         } else if(completedMode === "answer") { 
             await reportGameResult(completedMode, completedTime, null, null, completedSize, completedDifficulty);
             await fetchLeaderboardAndRender();
@@ -856,17 +994,38 @@
     function onKeyDown(e){ if(isGameFinished) return; if(selectedRow===-1||selectedCol===-1) return; if(puzzleMatrix[selectedRow][selectedCol]!==0) return; const key=e.key; const num=parseInt(key); if(!isNaN(num)&&num>=1&&num<=currentSize){ e.preventDefault(); setCellValue(selectedRow,selectedCol,num); } else if(key==="Backspace"||key==="Delete"||key==="0"){ e.preventDefault(); setCellValue(selectedRow,selectedCol,0); } else if(key==="ArrowUp"&&selectedRow>0){ selectedRow--; renderSudokuGrid(); } else if(key==="ArrowDown"&&selectedRow<currentSize-1){ selectedRow++; renderSudokuGrid(); } else if(key==="ArrowLeft"&&selectedCol>0){ selectedCol--; renderSudokuGrid(); } else if(key==="ArrowRight"&&selectedCol<currentSize-1){ selectedCol++; renderSudokuGrid(); } }
     function onSettingsChange(){ currentSize=parseInt(sizeSelect.value); currentDifficulty=difficultySelect.value; generateNewGame(); }
 
-    // ========== 排行榜 + 个人实时排名 ==========
-    const API_ALL = "https://quickform.cn/api/1xtadf78hw/all";
+    // ========== 排行榜 + 个人实时排名（仅当天，每人最佳） ==========
+    const API_ALL = "https://wzkjgz.site/api/vhcjkp3lmk/all";
+
     async function fetchLeaderboardAndRender() {
         try {
             const res = await fetch(API_ALL);
             if(!res.ok) throw new Error("HTTP error");
             const json = await res.json();
             const submissions = json.submissions || [];
-            const answerRecords = submissions.filter(s => s.mode === "answer" && s.classNumber && s.studentName && typeof s.timeSeconds === "number");
+            // 过滤出有效的答题记录
+            let answerRecords = submissions.filter(s => s.mode === "answer" && s.classNumber && s.studentName && typeof s.timeSeconds === "number");
+            // 获取今天的本地日期（YYYY-MM-DD）
+            const todayStr = new Date().toLocaleDateString('en-CA');
+            // 过滤出今天的记录
+            const todayRecords = answerRecords.filter(s => {
+                if (!s.completedAt) return false;
+                const dateStr = new Date(s.completedAt).toLocaleDateString('en-CA');
+                return dateStr === todayStr;
+            });
+            // 按学生分组（班级+姓名）取最优成绩（时间最短）
+            const studentMap = new Map();
+            for (let rec of todayRecords) {
+                const key = `${rec.classNumber}|${rec.studentName}`;
+                if (!studentMap.has(key) || rec.timeSeconds < studentMap.get(key).timeSeconds) {
+                    studentMap.set(key, rec);
+                }
+            }
+            const todayBestRecords = Array.from(studentMap.values());
+
+            // 构建分组用于排行榜显示（只显示前三）
             const groups = { 4: {}, 9: {} };
-            for(let rec of answerRecords) {
+            for(let rec of todayBestRecords) {
                 const sz = rec.size;
                 if(sz !== 4 && sz !== 9) continue;
                 const diff = rec.difficulty;
@@ -884,9 +1043,12 @@
                 }
             }
             renderLeaderboardHorizontal(groups);
-            // 渲染个人排名卡片
-            renderPersonalRank(answerRecords);
-        } catch(e) { console.error("排行榜加载失败",e); document.getElementById("leaderboardContent").innerHTML = `<div style="text-align:center; width:100%; padding:20px;">排行榜加载失败，请检查网络</div>`; }
+            // 渲染个人排名（基于当天最佳记录）
+            renderPersonalRank(todayBestRecords);
+        } catch(e) {
+            console.error("排行榜加载失败",e);
+            document.getElementById("leaderboardContent").innerHTML = `<div style="text-align:center; width:100%; padding:20px;">排行榜加载失败，请检查网络</div>`;
+        }
     }
 
     function renderLeaderboardHorizontal(groups) {
@@ -915,32 +1077,53 @@
         container.innerHTML = html;
     }
 
-    // 个人实时排名：根据最后完成的记录(或当前会话答题者)查询其在对应size+难度下的排名
-    function renderPersonalRank(allRecords) {
-        // 优先显示当前会话答题者最后完成的成绩
-        let targetRecord = lastCompletedRecord;
-        // 如果没有刚完成的记录，但有学生信息且已开启过答题模式且未新游戏，可尝试
-        if(!targetRecord && studentClass && studentName) {
-            // 尝试从现有记录中找到该学生最新的一条
-            const matched = allRecords.filter(r => r.classNumber === studentClass && r.studentName === studentName && r.size === currentSize && r.difficulty === currentDifficulty);
-            if(matched.length > 0) {
-                matched.sort((a,b) => new Date(b.completedAt) - new Date(a.completedAt));
-                targetRecord = matched[0];
+    // 个人排名：基于当天最佳记录计算当前学生的排名
+    function renderPersonalRank(todayBestRecords) {
+        // 优先使用刚完成的记录（lastCompletedRecord），但必须存在于todayBestRecords中
+        let targetRecord = null;
+        if (lastCompletedRecord) {
+            const match = todayBestRecords.find(r =>
+                r.classNumber === lastCompletedRecord.classNumber &&
+                r.studentName === lastCompletedRecord.studentName &&
+                r.size === lastCompletedRecord.size &&
+                r.difficulty === lastCompletedRecord.difficulty &&
+                r.timeSeconds === lastCompletedRecord.timeSeconds
+            );
+            if (match) targetRecord = match;
+        }
+        // 如果没有，尝试从当前答题者信息查找
+        if (!targetRecord && studentClass && studentName) {
+            const matched = todayBestRecords.filter(r =>
+                r.classNumber === studentClass && r.studentName === studentName
+            );
+            if (matched.length > 0) {
+                // 优先匹配当前宫格和难度，否则取最佳成绩
+                const sameDiff = matched.filter(r => r.size === currentSize && r.difficulty === currentDifficulty);
+                if (sameDiff.length > 0) {
+                    targetRecord = sameDiff.reduce((a,b) => a.timeSeconds < b.timeSeconds ? a : b);
+                } else {
+                    targetRecord = matched.reduce((a,b) => a.timeSeconds < b.timeSeconds ? a : b);
+                }
             }
         }
-        if(!targetRecord) {
-            personalRankContent.innerHTML = `<div class="no-data-card">暂无答题记录<br>完成答题模式后自动显示排名</div>`;
+        if (!targetRecord) {
+            personalRankContent.innerHTML = `<div class="no-data-card">今日暂无答题记录<br>完成答题模式后自动显示今日排名</div>`;
             return;
         }
-        // 计算该难度下的排名 (时间升序)
-        const sameCategory = allRecords.filter(r => r.size === targetRecord.size && r.difficulty === targetRecord.difficulty);
+
+        // 计算该学生在同一宫格+难度下的排名（基于所有今日最佳记录）
+        const sameCategory = todayBestRecords.filter(r => r.size === targetRecord.size && r.difficulty === targetRecord.difficulty);
         sameCategory.sort((a,b) => a.timeSeconds - b.timeSeconds);
-        const rankIndex = sameCategory.findIndex(r => r.classNumber === targetRecord.classNumber && r.studentName === targetRecord.studentName && r.timeSeconds === targetRecord.timeSeconds);
+        const rankIndex = sameCategory.findIndex(r =>
+            r.classNumber === targetRecord.classNumber &&
+            r.studentName === targetRecord.studentName &&
+            r.timeSeconds === targetRecord.timeSeconds
+        );
         let rank = rankIndex === -1 ? "未上榜" : (rankIndex + 1).toString();
         let isTop3 = (rank !== "未上榜" && rank <= 3);
         const diffNameMap = { easy:"简易", medium:"中等", hard:"困难" };
         const sizeName = targetRecord.size === 4 ? "四宫格" : "九宫格";
-        
+
         let gapHtml = "";
         if(rank !== "未上榜" && rank > 3) {
             const thirdTime = sameCategory[2] ? sameCategory[2].timeSeconds : null;
@@ -951,7 +1134,7 @@
         } else if(rank !== "未上榜" && rank <= 3) {
             gapHtml = `<div class="player-detail"><span class="player-label">🏆 恭喜进入前三</span><span class="player-value">继续加油！</span></div>`;
         }
-        
+
         personalRankContent.innerHTML = `
             <div class="player-info">
                 <div class="player-detail"><span class="player-label">姓名</span><span class="player-value">${targetRecord.studentName}</span></div>
@@ -959,7 +1142,7 @@
                 <div class="player-detail"><span class="player-label">宫格/难度</span><span class="player-value">${sizeName} · ${diffNameMap[targetRecord.difficulty]}</span></div>
                 <div class="player-detail"><span class="player-label">用时</span><span class="player-value">${targetRecord.formattedTime}</span></div>
                 <div style="text-align:center; margin: 8px 0;">
-                    <span class="rank-badge" style="background:${isTop3 ? '#ffd966' : '#e0e7f0'}">🏅 当前排名: ${rank}</span>
+                    <span class="rank-badge" style="background:${isTop3 ? '#ffd966' : '#e0e7f0'}">🏅 今日排名: ${rank}</span>
                 </div>
                 ${gapHtml}
             </div>
@@ -978,6 +1161,9 @@
         modalCancelBtn.addEventListener("click", () => { hideModal(); modeTipSpan.innerHTML = "答题模式已取消，仍处于练习模式"; setTimeout(()=>{ if(!isAnswerModeActive && !isGameFinished) modeTipSpan.innerHTML = "✨ 练习模式：随意填写，不计时 ✨"; },1500); });
         modalOverlay.addEventListener("click", (e) => { if(e.target === modalOverlay) hideModal(); });
         refreshLeaderboardBtn.addEventListener("click", () => { fetchLeaderboardAndRender(); });
+
+        classSelect.addEventListener("change", validateInputOnChange);
+        studentNameInput.addEventListener("input", validateInputOnChange);
     }
 
     function startGame() { currentSize=4; currentDifficulty="medium"; generateNewGame(); initEventListeners(); fetchLeaderboardAndRender(); }
