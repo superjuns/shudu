@@ -997,7 +997,13 @@
     // ========== 排行榜 + 个人实时排名（仅当天，每人最佳） ==========
     const API_ALL = "https://wzkjgz.site/api/vhcjkp3lmk/all";
 
-    async function fetchLeaderboardAndRender() {
+        function getBeijingTodayStr() {
+        var d = new Date();
+        d.setTime(d.getTime() + 8 * 3600 * 1000);
+        return d.toISOString().slice(0, 10);
+    }
+
+async function fetchLeaderboardAndRender() {
         try {
             const res = await fetch(API_ALL);
             if(!res.ok) throw new Error("HTTP error");
@@ -1006,12 +1012,12 @@
             // 过滤出有效的答题记录
             let answerRecords = submissions.filter(s => s.mode === "answer" && s.classNumber && s.studentName && typeof s.timeSeconds === "number");
             // 获取今天的本地日期（YYYY-MM-DD）
-            const todayStr = new Date().toLocaleDateString('en-CA');
+            const todayStr = getBeijingTodayStr();
             // 过滤出今天的记录
             const todayRecords = answerRecords.filter(s => {
                 if (!s.completedAt) return false;
-                const dateStr = new Date(s.completedAt).toLocaleDateString('en-CA');
-                return dateStr === todayStr;
+                const dateStr = s.completedAt || '';
+                return dateStr.slice(0, 10) === todayStr;
             });
             // 按学生分组（班级+姓名）取最优成绩（时间最短）
             const studentMap = new Map();
