@@ -890,7 +890,7 @@
             hideModal();
             isAnswerModeActive = true;
             stopTimer(); resetTimerDisplay(); startTimerIfNeeded();
-            answerModeBtn.disabled = true; answerModeBtn.textContent = "⏵ 答题中...";
+            answerModeBtn.disabled = false; answerModeBtn.textContent = "⏹ 结束答题";
             modeBadgeSpan.textContent = `⏱️ 答题模式 (${studentName} 同学)`; modeBadgeSpan.style.background = "#b45f1b";
             modeTipSpan.innerHTML = `⚡ 答题模式已开启，计时开始！完成时自动上报成绩 (班级:${studentClass}班 姓名:${studentName}) ⚡`;
             modeTipSpan.style.color = "#2c6e2c";
@@ -1196,7 +1196,7 @@ async function fetchLeaderboardAndRender() {
         checkWinBtn.addEventListener("click", () => { if(checkVictory()) return; modeTipSpan.innerHTML = "🔍 还没有完成，继续加油～"; setTimeout(()=>{ if(!isGameFinished && !isAnswerModeActive) modeTipSpan.innerHTML = "✨ 练习模式：随意填写，不计时 ✨"; else if(!isGameFinished && isAnswerModeActive) modeTipSpan.innerHTML = "⚡ 答题模式进行中，继续挑战"; },1200); });
         sizeSelect.addEventListener("change", onSettingsChange);
         difficultySelect.addEventListener("change", onSettingsChange);
-        answerModeBtn.addEventListener("click", () => { if(isGameFinished){ modeTipSpan.innerHTML = "游戏已胜利，请点击「新游戏」重新挑战"; return; } if(isAnswerModeActive) return; showInfoModal(); });
+        answerModeBtn.addEventListener("click", () => { if(isGameFinished){ modeTipSpan.innerHTML = "游戏已胜利，请点击「新游戏」重新挑战"; return; } if(isAnswerModeActive) { deactivateAnswerMode(); return; } showInfoModal(); });
         window.addEventListener("keydown", onKeyDown);
         modalConfirmBtn.addEventListener("click", confirmAnswerMode);
         modalCancelBtn.addEventListener("click", () => { hideModal(); modeTipSpan.innerHTML = "答题模式已取消，仍处于练习模式"; setTimeout(()=>{ if(!isAnswerModeActive && !isGameFinished) modeTipSpan.innerHTML = "✨ 练习模式：随意填写，不计时 ✨"; },1500); });
