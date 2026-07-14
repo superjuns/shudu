@@ -708,6 +708,30 @@
     // ========== 白名单功能 ==========
     const WHITELIST_API = "https://wzkjgz.site/api/5tmbx2o6rg/all";
 
+    // URL参数自动登录工具函数
+    function getUrlParam(name) {
+        return new URLSearchParams(window.location.search).get(name) || '';
+    }
+    function normStr(s) {
+        return String(s || '').replace(/班/g, '').replace(/\s/g, '').toLowerCase();
+    }
+
+    // URL参数自动登录（平台跳转时免输入）
+    async function tryAutoLoginFromUrl() {
+        const cls = getUrlParam('class') || getUrlParam('cls') || getUrlParam('班级');
+        const name = getUrlParam('name') || getUrlParam('姓名');
+        if (!cls || !name) return false;
+        const clsNum = cls.replace(/班/g, '').trim();
+        if (!/^\d+$/.test(clsNum)) return false;
+        try {
+            const result = await checkWhitelist(parseInt(clsNum), name);
+            if (!result || !result.allowed) return false;
+            localStorage.setItem('shudu_class', clsNum);
+            localStorage.setItem('shudu_name', name);
+            return true;
+        } catch (e) { return false; }
+    }
+
     async function fetchWhitelist() {
         if (whitelistCache) return whitelistCache;
         if (whitelistLoading) {
@@ -820,6 +844,15 @@
     function showInfoModal() {
         if (isGameFinished) { modeTipSpan.innerHTML = "🏁 游戏已完成，请点击「新游戏」重新挑战"; modeTipSpan.style.color = "#c0392b"; return false; }
         if (isAnswerModeActive) return false;
+        // 如果已有登录信息，直接开始答题
+        const savedClass = localStorage.getItem('shudu_class');
+        const savedName = localStorage.getItem('shudu_name');
+        if (savedClass && savedName) {
+            classSelect.value = savedClass;
+            studentNameInput.value = savedName;
+            confirmAnswerMode();
+            return false;
+        }
         classSelect.value = "1"; studentNameInput.value = "";
         whitelistStatus.innerHTML = '';
         modalSubtitle.textContent = '请填写个人信息后再开始挑战';
@@ -852,6 +885,8 @@
             whitelistStatus.innerHTML = `<span class="whitelist-success">✅ 验证通过！</span>`;
             studentClass = parseInt(selectedClass);
             studentName = name;
+            localStorage.setItem('shudu_class', selectedClass);
+            localStorage.setItem('shudu_name', name);
             hideModal();
             isAnswerModeActive = true;
             stopTimer(); resetTimerDisplay(); startTimerIfNeeded();
@@ -1174,6 +1209,9 @@ async function fetchLeaderboardAndRender() {
 
     function startGame() { currentSize=4; currentDifficulty="medium"; generateNewGame(); initEventListeners(); fetchLeaderboardAndRender(); }
     startGame();
+
+    // URL参数自动登录（平台跳转时免输入）
+    tryAutoLoginFromUrl();
 </script>
 </body>
 </html>
