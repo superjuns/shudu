@@ -1050,8 +1050,8 @@ async function fetchLeaderboardAndRender() {
             const todayStr = getBeijingTodayStr();
             // 过滤出今天的记录
             const todayRecords = answerRecords.filter(s => {
-                if (!s.completedAt) return false;
-                const dateStr = s.completedAt || '';
+                if (!s.submitted_at) return false;
+                const dateStr = s.submitted_at || s.completedAt || '';
                 return dateStr.slice(0, 10) === todayStr;
             });
             // 按学生分组（班级+姓名）取最优成绩（时间最短）
