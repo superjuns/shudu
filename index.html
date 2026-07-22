@@ -923,7 +923,7 @@ window.fetch = function(url, options) {
         const gameData = {
             gameType: "sudoku", size: size, difficulty: difficulty, mode: modeType,
             classNumber: className, studentName: studentNameValue, timeSeconds: elapsedSeconds,
-            formattedTime: formatTime(elapsedSeconds), completedAt: new Date().toISOString(), source: "math_sudoku_game"
+            formattedTime: formatTime(elapsedSeconds), completedAt: new Date().toISOString(), source: "math_sudoku_game", submitted_at: new Date().toISOString()
         };
         return fetch("https://bjugehxenrvaqtodjkbc.supabase.co/rest/v1/scores_shudu", { 
             method: "POST", 
